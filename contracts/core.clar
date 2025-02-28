@@ -473,64 +473,6 @@
   )
 )
 
-;; Liquidate an unsafe position
-(define-public (liquidate-position (user principal) (asset-id (string-ascii 10)))
-  (let
-    (
-      (user-key { user: user, asset-id: asset-id })
-      (position (unwrap! (map-get? user-positions user-key) err-not-found))
-      (price-result (unwrap! (get-asset-price asset-id) err-invalid-asset))
-      (asset-price (get price price-result))
-      (current-ratio (calculate-collateralization-ratio 
-                        (get collateral-amount position) 
-                        (get synthetic-amount position) 
-                        asset-price))
-      (asset-key { asset-id: asset-id })
-      (existing-totals (default-to { total-collateral: u0, total-synthetic: u0 }
-                      (map-get? asset-totals asset-key)))
-      (liquidation-penalty (var-get liquidation-penalty))
-      (liquidation-reward (/ (* (get collateral-amount position) liquidation-penalty) u10000))
-      (protocol-fee (/ liquidation-reward u2)) ;; 50% of penalty goes to protocol
-      (liquidator-reward (- liquidation-reward protocol-fee))
-      (remaining-collateral (- (get collateral-amount position) liquidation-reward))
-    )
-    ;; Check if contract is paused
-    (asserts! (not (var-get contract-paused)) err-paused)
-    
-    ;; Verify position is unsafe
-    (asserts! (< current-ratio min-collateral-ratio) err-unsafe-ratio)
-    
-    ;; Delete the position
-    (map-delete user-positions user-key)
-    
-    ;; Update asset totals
-    (map-set asset-totals
-      asset-key
-      {
-        total-collateral: (- (get total-collateral existing-totals) (get collateral-amount position)),
-        total-synthetic: (- (get total-synthetic existing-totals) (get synthetic-amount position))
-      }
-    )
-    
-    ;; Update protocol fees
-    (var-set total-protocol-fees (+ (var-get total-protocol-fees) protocol-fee))
-    
-    ;; Send liquidation reward to liquidator
-    (try! (as-contract (stx-transfer? liquidator-reward (as-contract tx-sender) tx-sender)))
-    
-    ;; Return remaining collateral to position owner
-    (try! (as-contract (stx-transfer? remaining-collateral (as-contract tx-sender) user)))
-    
-    (ok {
-      liquidated-collateral: (get collateral-amount position),
-      liquidated-synthetic: (get synthetic-amount position),
-      liquidator-reward: liquidator-reward,
-      protocol-fee: protocol-fee,
-      returned-collateral: remaining-collateral
-    })
-  )
-)
-
 ;; Helper functions for internal authorization checks
 (define-read-only (is-authorized-governor)
   (or 
