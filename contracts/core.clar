@@ -523,22 +523,6 @@
   )
 )
 
-;; Check if a position is eligible for liquidation
-(define-read-only (is-liquidatable (user principal) (asset-id (string-ascii 10)))
-  (let
-    (
-      (position (unwrap! (map-get? user-positions { user: user, asset-id: asset-id }) err-not-found))
-      (price-result (unwrap! (get-asset-price asset-id) err-invalid-asset))
-      (asset-price (get price price-result))
-      (current-ratio (calculate-collateralization-ratio 
-                        (get collateral-amount position) 
-                        (get synthetic-amount position) 
-                        asset-price))
-    )
-    (< current-ratio min-collateral-ratio)
-  )
-)
-
 (define-read-only (get-asset-info (asset-id (string-ascii 10)))
   (map-get? supported-assets { asset-id: asset-id })
 )
